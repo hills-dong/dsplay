@@ -42,7 +42,7 @@ export default function AppShell(props: { children?: JSX.Element }) {
           z-index:50;
           -webkit-app-region:drag;
         ">
-          <span class="serif" style="font-size:22px; font-weight:700; letter-spacing:-0.02em;">DSPLAY</span>
+          <span class="serif" style="font-size:22px; font-weight:700; letter-spacing:-0.02em;">DSPLAY<span style="color:var(--accent)">.</span></span>
           <nav style="display:flex; gap:18px; -webkit-app-region:no-drag;">
             {NAV.map((item) => (
               <button
