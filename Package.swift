@@ -14,6 +14,7 @@ let package = Package(
             exclude: ["Tests"],
             resources: [
                 .copy("Resources/WebDist"),
+                .copy("Resources/StatusItem.png"),
             ]
         ),
         .testTarget(
