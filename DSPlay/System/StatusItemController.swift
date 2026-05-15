@@ -21,8 +21,7 @@ final class StatusItemController: NSObject {
         super.init()
 
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "DSPlay")
-            button.image?.isTemplate = true
+            button.image = Self.loadStatusItemImage()
             button.toolTip = "DSPlay"
             button.target = self
             button.action = #selector(handleClick(_:))
@@ -38,6 +37,33 @@ final class StatusItemController: NSObject {
         )
         self.popover.contentViewController = NSHostingController(rootView: view)
         self.popover.delegate = self
+    }
+
+    /// Loads StatusItem.png from whichever bundle layout we're running in.
+    /// Mirrors the multi-path strategy in WebViewController.resolveWebDistDirectory.
+    private static func loadStatusItemImage() -> NSImage? {
+        let candidates: [URL?] = [
+            // 1. swift-bundler layout: nested SwiftPM bundle.
+            Bundle.main
+                .url(forResource: "DSPlay_DSPlay", withExtension: "bundle")
+                .flatMap { Bundle(url: $0) }?
+                .url(forResource: "StatusItem", withExtension: "png"),
+            // 2. SwiftPM module accessor (used by `swift run` / tests).
+            Bundle.module.url(forResource: "StatusItem", withExtension: "png"),
+            // 3. Flat in Bundle.main.
+            Bundle.main.url(forResource: "StatusItem", withExtension: "png"),
+        ]
+        for url in candidates.compactMap({ $0 }) {
+            if let img = NSImage(contentsOf: url) {
+                img.size = NSSize(width: 18, height: 18)
+                img.isTemplate = true
+                return img
+            }
+        }
+        NSLog("[DSPlay] StatusItem.png not found in any bundle path; falling back to SF Symbol")
+        let fallback = NSImage(systemSymbolName: "music.note", accessibilityDescription: "DSPlay")
+        fallback?.isTemplate = true
+        return fallback
     }
 
     @objc private func handleClick(_ sender: Any?) {
