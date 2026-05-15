@@ -48,6 +48,7 @@ jobs:
       - name: Bundle Swift app
         run: |
           export PATH="$HOME/.mint/bin:$PATH"
+          mint bootstrap
           mint run swift-bundler bundle
 
       - name: Drop AppIcon + ad-hoc re-sign
