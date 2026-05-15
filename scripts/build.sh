@@ -13,7 +13,10 @@ echo "build.sh: [2/5] IPC codegen"
 bash scripts/gen-ipc.sh
 
 echo "build.sh: [3/5] swift-bundler bundle"
-mint run swift-bundler bundle
+# Pin to v2.0.7 — `mint run swift-bundler` (no version) resolves to `main`,
+# which fails to clone and uses a newer TOML schema incompatible with
+# Bundler.toml.
+mint run swift-bundler@v2.0.7 bundle
 
 APP_PATH="$(find .build/bundler -maxdepth 4 -name 'DSPlay.app' -type d 2>/dev/null | head -1 || true)"
 if [ -z "$APP_PATH" ]; then
@@ -30,6 +33,12 @@ if [ -f DSPlay/Resources/AppIcon.icns ]; then
 else
   echo "  warning: DSPlay/Resources/AppIcon.icns missing — run scripts/make-icon.sh" >&2
 fi
+
+# swift-bundler v2.0.7 silently drops custom keys under [apps.*.plist], so
+# inject LSUIElement here. Without it the app briefly shows a Dock icon at
+# launch before NSApp.setActivationPolicy(.accessory) takes effect.
+/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$APP_PATH/Contents/Info.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$APP_PATH/Contents/Info.plist"
 
 # swift-bundler signs only the executable, leaving resources unsigned
 # (`code has no resources but signature indicates they must be present`),

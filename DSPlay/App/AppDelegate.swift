@@ -5,34 +5,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Eagerly build the window controller so PlaybackEngine + SynologyClient
+        // exist for the status-bar mini player, but don't show the window — this
+        // is a menu-bar-resident app, the status item is the entry point.
         let wc = MainWindowController()
-        wc.showWindow(nil)
         windowController = wc
-        NSApp.activate(ignoringOtherApps: true)
 
-        // Status item — needs the playback engine to control playback from the menubar.
         let engine = wc.webViewController.playback
-        let events = wc.webViewController.events
+        let synology = wc.webViewController.synology
         statusItemController = StatusItemController(
             engine: engine,
-            events: events,
+            synology: synology,
             onShowWindow: { [weak self] in self?.showMainWindow() }
         )
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Keep playing in the background — re-opening is via Dock icon, status item, or
-        // Cmd+N (App menu would route here too if we add one).
+        // Keep playing in the background — re-opening is via the status item.
         return false
-    }
-
-    /// macOS sends this when the user clicks the Dock icon and there are no
-    /// visible windows. We reopen the main window.
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            showMainWindow()
-        }
-        return true
     }
 
     @MainActor
@@ -42,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         windowController?.showWindow(nil)
         windowController?.window?.makeKeyAndOrderFront(nil)
+        // .accessory apps need an explicit activation kick to bring the window
+        // to the foreground in front of whatever the user was doing.
         NSApp.activate(ignoringOtherApps: true)
     }
 }

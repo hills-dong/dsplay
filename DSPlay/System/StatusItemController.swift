@@ -1,102 +1,70 @@
 import AppKit
+import SwiftUI
 
 @MainActor
 final class StatusItemController: NSObject {
     private let item: NSStatusItem
-    private weak var engine: PlaybackEngine?
-    private weak var events: BridgeEvents?
+    private let popover: NSPopover
+    private let model: MiniPlayerModel
     private let onShowWindow: () -> Void
 
-    private let titleItem: NSMenuItem
-    private let playPauseItem: NSMenuItem
-    private let nextItem: NSMenuItem
-    private let prevItem: NSMenuItem
-
-    init(engine: PlaybackEngine, events: BridgeEvents, onShowWindow: @escaping () -> Void) {
-        self.engine = engine
-        self.events = events
+    init(engine: PlaybackEngine, synology: SynologyClient, onShowWindow: @escaping () -> Void) {
         self.onShowWindow = onShowWindow
+        self.model = MiniPlayerModel(engine: engine, synology: synology)
 
-        let statusBar = NSStatusBar.system
-        self.item = statusBar.statusItem(withLength: NSStatusItem.variableLength)
-        self.item.button?.title = "♪"
-        self.item.button?.toolTip = "DSPlay"
+        self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
-        // Build menu
-        let menu = NSMenu()
-        self.titleItem = NSMenuItem(title: "Nothing playing", action: nil, keyEquivalent: "")
-        self.titleItem.isEnabled = false
-        menu.addItem(titleItem)
-        menu.addItem(.separator())
-
-        self.playPauseItem = NSMenuItem(title: "Play",  action: #selector(togglePlay), keyEquivalent: "")
-        self.nextItem     = NSMenuItem(title: "Next ⏭", action: #selector(next),       keyEquivalent: "")
-        self.prevItem     = NSMenuItem(title: "Prev ⏮", action: #selector(prev),       keyEquivalent: "")
-        menu.addItem(playPauseItem)
-        menu.addItem(nextItem)
-        menu.addItem(prevItem)
-        menu.addItem(.separator())
-
-        let showItem = NSMenuItem(title: "Show DSPlay", action: #selector(showWindow), keyEquivalent: "n")
-        showItem.keyEquivalentModifierMask = [.command]
-        menu.addItem(showItem)
-
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-
-        self.item.menu = menu
+        self.popover = NSPopover()
+        self.popover.behavior = .transient
+        self.popover.animates = true
 
         super.init()
 
-        // Set targets after super.init (so @objc methods resolve)
-        for it in [playPauseItem, nextItem, prevItem, showItem] { it.target = self }
-
-        // Subscribe to playback state changes by polling — we don't have an event bus to Swift
-        // since events go to the WebView. Poll every 500ms for the title + button label.
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+        if let button = item.button {
+            button.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "DSPlay")
+            button.image?.isTemplate = true
+            button.toolTip = "DSPlay"
+            button.target = self
+            button.action = #selector(handleClick(_:))
         }
-        refresh()
+
+        let view = MiniPlayerView(
+            model: model,
+            onShowWindow: { [weak self] in
+                self?.closePopover()
+                self?.onShowWindow()
+            },
+            onQuit: { NSApp.terminate(nil) }
+        )
+        self.popover.contentViewController = NSHostingController(rootView: view)
+        self.popover.delegate = self
     }
 
-    // MARK: actions
-
-    @objc func togglePlay() {
-        engine?.toggle()
-        refresh()
-    }
-
-    @objc func next() {
-        Task { @MainActor in try? await engine?.next() }
-    }
-
-    @objc func prev() {
-        Task { @MainActor in try? await engine?.prev() }
-    }
-
-    @objc func showWindow() {
-        onShowWindow()
-    }
-
-    // MARK: state sync
-
-    private func refresh() {
-        let track = engine?.currentTrack
-        if let track {
-            let display = "\(track.title) — \(track.artist)"
-            titleItem.title = display.count > 60 ? String(display.prefix(58)) + "…" : display
-            item.button?.title = "♪"
-            item.button?.toolTip = "DSPlay · \(track.title)"
-            playPauseItem.title = (engine?.isPlaying ?? false) ? "Pause" : "Play"
+    @objc private func handleClick(_ sender: Any?) {
+        if popover.isShown {
+            closePopover()
         } else {
-            titleItem.title = "Nothing playing"
-            item.button?.title = "♪"
-            item.button?.toolTip = "DSPlay"
-            playPauseItem.title = "Play"
+            showPopover()
         }
-        let hasQueue = (engine?.queue.count ?? 0) > 0
-        nextItem.isEnabled = hasQueue
-        prevItem.isEnabled = hasQueue
-        playPauseItem.isEnabled = hasQueue
+    }
+
+    private func showPopover() {
+        guard let button = item.button else { return }
+        // .accessory apps don't always own the active app, so activate so the
+        // popover can become key and receive keyboard input.
+        NSApp.activate(ignoringOtherApps: true)
+        model.start()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
+    private func closePopover() {
+        popover.performClose(nil)
+    }
+}
+
+extension StatusItemController: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        model.stop()
     }
 }
