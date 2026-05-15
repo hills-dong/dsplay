@@ -1,0 +1,17 @@
+format_version = 2
+
+[apps.DSPlay]
+identifier = "app.dsplay"
+product = "DSPlay"
+version = "0.1.0"
+category = "public.app-category.music"
+minimum_macos_version = "14.0"   # required by swift-bundler v2.0.7+ when app has resources
+
+[apps.DSPlay.plist]
+CFBundleDisplayName = "DSPlay"
+LSMinimumSystemVersion = "14.0"
+NSPrincipalClass = "NSApplication"
+NSHumanReadableCopyright = ""
+
+[apps.DSPlay.plist.NSAppTransportSecurity]
+NSAllowsArbitraryLoads = false
