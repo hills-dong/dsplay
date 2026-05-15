@@ -46,7 +46,7 @@ final class PlaybackEngine {
             object: nil, queue: .main
         ) { [weak self] _ in
             // Bounce to main actor — the AVFoundation callback queue may not be main.
-            Task { @MainActor in self?.handleItemDidEnd() }
+            Task { @MainActor [weak self] in self?.handleItemDidEnd() }
         }
     }
 

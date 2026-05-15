@@ -16,17 +16,17 @@ final class RemoteCommands {
 
         cc.playCommand.isEnabled = true
         cc.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.engine?.play(); self?.events.mediaKey("toggle") }
+            Task { @MainActor [weak self] in self?.engine?.play(); self?.events.mediaKey("toggle") }
             return .success
         }
         cc.pauseCommand.isEnabled = true
         cc.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.engine?.pause(); self?.events.mediaKey("toggle") }
+            Task { @MainActor [weak self] in self?.engine?.pause(); self?.events.mediaKey("toggle") }
             return .success
         }
         cc.togglePlayPauseCommand.isEnabled = true
         cc.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.engine?.toggle(); self?.events.mediaKey("toggle") }
+            Task { @MainActor [weak self] in self?.engine?.toggle(); self?.events.mediaKey("toggle") }
             return .success
         }
         cc.nextTrackCommand.isEnabled = true
@@ -49,7 +49,7 @@ final class RemoteCommands {
         cc.changePlaybackPositionCommand.isEnabled = true
         cc.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            Task { @MainActor in self?.engine?.seek(seconds: e.positionTime) }
+            Task { @MainActor [weak self] in self?.engine?.seek(seconds: e.positionTime) }
             return .success
         }
     }
