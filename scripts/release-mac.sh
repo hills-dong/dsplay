@@ -22,6 +22,11 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 export PATH="$HOME/.mint/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
+# Saved release credentials (Team ID / API key / Issuer / review phone).
+# shellcheck disable=SC1090
+[ -f "$HOME/.appstoreconnect/dsplay-release.env" ] && \
+  . "$HOME/.appstoreconnect/dsplay-release.env"
+
 : "${DSPLAY_TEAM_ID:?set DSPLAY_TEAM_ID}"
 : "${ASC_KEY_ID:?set ASC_KEY_ID}"
 : "${ASC_ISSUER_ID:?set ASC_ISSUER_ID}"
