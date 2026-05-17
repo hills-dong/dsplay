@@ -65,11 +65,15 @@ final class StatusItemController: NSObject {
            let img = makeImage(url) {
             return img
         }
-        // 3. SwiftPM module accessor — last resort.
+        // 3. SwiftPM module accessor — last resort. `Bundle.module` is
+        //    synthesised only by SwiftPM (swift-bundler builds); it does not
+        //    exist in the Xcode Mac App Store target, so gate on SWIFT_PACKAGE.
+        #if SWIFT_PACKAGE
         if let url = Bundle.module.url(forResource: "StatusItem", withExtension: "png"),
            let img = makeImage(url) {
             return img
         }
+        #endif
 
         NSLog("[DSPlay] StatusItem.png not found in any bundle path; falling back to SF Symbol")
         let fallback = NSImage(systemSymbolName: "music.note", accessibilityDescription: "DSPlay")

@@ -1,8 +1,12 @@
-# XcodeGen spec for the iOS TestFlight / App Store build ONLY.
-# macOS keeps using swift-bundler (scripts/build.sh) and the simulator path
-# keeps using scripts/build-ios-sim.sh — both untouched. This project simply
-# wraps the same DSPlay/ Swift sources as a signable iOS .app so Xcode can
-# Archive → upload to App Store Connect / TestFlight.
+# XcodeGen spec for the signable App Store builds (iOS + macOS).
+#
+#   scheme DSPlay        → iOS / iPadOS  (TestFlight / App Store)
+#   scheme DSPlay-macOS  → Mac App Store (sandboxed .pkg)
+#
+# Local dev paths are untouched: macOS still uses swift-bundler
+# (scripts/build.sh) and the simulator uses scripts/build-ios-sim.sh. This
+# project just wraps the same DSPlay/ Swift sources as signable .app bundles
+# so Xcode can Archive → upload to App Store Connect.
 #
 # Regenerate after editing:  xcodegen generate
 name: DSPlay
@@ -10,6 +14,7 @@ options:
   bundleIdPrefix: app
   deploymentTarget:
     iOS: "26.0"
+    macOS: "26.0"
   createIntermediateGroups: true
 
 settings:
@@ -40,3 +45,27 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
         GENERATE_INFOPLIST_FILE: "NO"
+
+  DSPlay-macOS:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: DSPlay
+        excludes:
+          - "Tests/**"
+          - "Resources/AppIcon.icns"   # icon comes from the asset catalog
+      - path: Packaging/Assets-macOS.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.dsplay
+        PRODUCT_NAME: DSPlay
+        INFOPLIST_FILE: Packaging/macOS-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Packaging/DSPlay-macOS.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_APP_SANDBOX: "YES"
+        ENABLE_HARDENED_RUNTIME: "YES"
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+        GENERATE_INFOPLIST_FILE: "NO"
+        MARKETING_VERSION: "0.2.0"
+        COMBINE_HIDPI_IMAGES: "YES"
