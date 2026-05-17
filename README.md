@@ -1,30 +1,37 @@
 # DSPlay
 
-A native-feel macOS music player for Synology Audio Station.
+A native music player for Synology Audio Station — universal for **macOS** and **iOS / iPadOS**.
 
-Fully native: SwiftUI views in an AppKit shell, `AVQueuePlayer` streaming directly from your NAS. No web layer, no IPC bridge.
+Fully native: one SwiftUI codebase, AppKit shell on macOS / UIKit on iOS, `AVQueuePlayer` streaming directly from your NAS. No web layer, no IPC bridge.
 
 ## Features
 
-- Login to any Synology DSM (credentials stored locally at `~/Library/Application Support/DSPlay/credentials.json` with file mode 0600, silent re-auth on session expiry)
+- Login to any Synology DSM (credentials stored locally — `~/Library/Application Support/DSPlay/credentials.json` at file mode 0600 on macOS, Keychain on iOS — with silent re-auth on session expiry)
 - Search, browse artists / albums / playlists
 - Queue with auto-advance, prev / next / shuffle / repeat
-- Native Now Playing center + media keys (F7/F8/F9) + AirPods controls
+- Native Now Playing center, lock-screen / Control Center controls, media keys (F7/F8/F9 on Mac), AirPods controls, AirPlay route picker
 - Full-screen NowPlaying view with 4 swappable skins: **Editorial** (default), **Terminal CRT**, **Winamp 90s**, **Vinyl**
-- Background playback (window close keeps audio going), menubar status item with controls
+- Background playback; macOS menubar status item with controls
 
 ## Requirements
 
-Build:
+Build (macOS app):
 - macOS 14.0+
 - Xcode Command Line Tools (`xcode-select --install`)
 - [mint](https://github.com/yonaskolb/Mint) — `brew install mint`
 - [swift-bundler](https://swiftbundler.dev) — pinned to `v2.0.7` via `Mintfile` (`mint bootstrap`)
 
+Build (iOS app):
+- Xcode.app (full install)
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) — `brew install xcodegen` (project is generated from `project.yml`)
+- For App Store / TestFlight: a paid Apple Developer account
+
 Run / Install:
-- macOS 14.0+
+- macOS 14.0+ / iOS 26.0+
 
 ## Building from source
+
+### macOS
 
 ```bash
 bash scripts/build.sh   # builds the .app via swift-bundler + installs to /Applications
@@ -34,17 +41,28 @@ bash scripts/package.sh # builds + ad-hoc signs + makes dist/DSPlay-x.y.z.dmg
 
 The `.app` lands in `.build/bundler/DSPlay.app`.
 
-## Installation (personal use)
+### iOS
+
+```bash
+xcodegen generate                 # regenerate DSPlay.xcodeproj from project.yml
+bash scripts/build-ios-sim.sh     # build + assemble a runnable .app for the iOS Simulator
+```
+
+`scripts/build-ios-sim.sh` builds without Xcode/swift-bundler (the public swift-bundler
+v2.0.7 cannot bundle iOS). The macOS path is untouched. It prints the assembled `.app`
+path on the last line — install it into a booted simulator with `xcrun simctl install`.
+
+## Installation (macOS, personal use)
 
 ```bash
 bash scripts/package.sh
-open dist/DSPlay-0.1.0.dmg
+open dist/DSPlay-0.2.0.dmg
 # drag DSPlay.app to Applications
 ```
 
 Because the DMG is ad-hoc signed, macOS Gatekeeper may complain the first time. Right-click DSPlay.app → Open → confirm. From then on it launches normally.
 
-## Signing & Notarization (for distribution to others)
+## macOS signing & notarization (for distribution to others)
 
 The bundled `scripts/package.sh` produces an **ad-hoc signed** `.app`, which works on the machine that built it but trips Gatekeeper warnings on other Macs. To ship publicly, you need:
 
@@ -69,19 +87,39 @@ The bundled `scripts/package.sh` produces an **ad-hoc signed** `.app`, which wor
 
 Until you do this, share the DMG only with people who trust right-click-Open.
 
+## iOS — TestFlight / App Store
+
+`scripts/release-ios.sh` archives the iOS app and uploads it to App Store Connect.
+Signing cert + provisioning profile are created automatically via an App Store
+Connect API key (`-allowProvisioningUpdates`). The app record (Bundle ID
+`app.dsplay`) must already exist in App Store Connect.
+
+```bash
+DSPLAY_TEAM_ID=XXXXXXXXXX \
+ASC_KEY_ID=XXXXXXXXXX \
+ASC_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+bash scripts/release-ios.sh
+```
+
+Requires the API key file at `~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8`.
+
 ## Repository layout
 
 ```
-DSPlay/             Native Swift sources
-  App/              DSPlayApp (SwiftUI App) + AppDelegate + AppModel + MainWindowController
-  UI/               Theme, UIState, RootView + Components (CoverImage, TrackList, DetailHero, AlbumCard)
+DSPlay/             Native Swift sources (shared by macOS + iOS)
+  App/              DSPlayApp (SwiftUI App) + AppDelegate + IOSAppDelegate + AppModel + MainWindowController
+  UI/               Theme, UIState, RootView, Navigation, Platform shim + Components
   Views/            LoginView, MainShellView, Search/Artists/Albums/Playlists (+Detail),
-                    PlayerBarView, QueueDrawerView, NowPlaying/ (4 skins + switcher)
+                    NowPlaying/ (4 skins + switcher)
   Synology/         URLSession client + DTOs + SynologyError
-  Player/           AVQueuePlayer wrapper + PlayerState + NowPlayingCenter + RemoteCommands + MiniPlayerView
-  System/           Credentials store (file-backed) + NSStatusItem
-  Resources/        StatusItem.png, AppIcon.icns
-scripts/            build.sh, run.sh, package.sh, make-icon.{sh,swift}
+  Player/           AVQueuePlayer wrapper + PlayerState + AudioSession + NowPlayingCenter + RemoteCommands
+  System/           Credentials store + NSStatusItem (macOS)
+  Resources/        StatusItem.png, AppIcon.icns (macOS-only, gated)
+Packaging/          Assets.xcassets (app icon), Device-Info.plist (iOS)
+project.yml         XcodeGen spec for the signable iOS build
+scripts/            build.sh, run.sh, package.sh (macOS),
+                    build-ios-sim.sh, release-ios.sh, asc-submit.py, asc-jwt.swift (iOS)
+docs/               Landing page + privacy policy
 ```
 
 State flows one way: `PlaybackEngine` mutates an `@Observable PlayerState`;
@@ -91,11 +129,16 @@ no polling, no bridge.
 ## Development
 
 ```bash
-swift build                   # compile
+swift build                   # compile (macOS)
 swift test --no-parallel      # unit tests (the mock URLProtocol uses shared static state)
-bash scripts/run.sh           # build + launch the .app
+bash scripts/run.sh           # build + launch the macOS .app
+bash scripts/build-ios-sim.sh # build for the iOS Simulator
 ```
 
 ## Releases
 
-Tagged versions are built by GitHub Actions (`.github/workflows/release.yml`) on a `macos-14` runner. Push a tag like `v0.1.0` and the workflow produces a DMG attached to the GitHub Release. Builds are ad-hoc signed only — see "Signing & Notarization" above.
+Tagged versions of the macOS app are built by GitHub Actions
+(`.github/workflows/release.yml`) on a `macos-14` runner. Push a tag like
+`v0.2.0` and the workflow produces a DMG attached to the GitHub Release.
+macOS builds are ad-hoc signed only — see "macOS signing & notarization"
+above. iOS builds ship via TestFlight / App Store (see above).
