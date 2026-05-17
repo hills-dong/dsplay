@@ -10,9 +10,6 @@ struct SkinSwitcherView: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 10) {
             HStack(spacing: 18) {
-                plainIcon("xmark") {
-                    withAnimation(.smooth) { ui.nowPlayingOpen = false }
-                }
                 plainIcon("paintpalette") {
                     withAnimation(.smooth) { open.toggle() }
                 }

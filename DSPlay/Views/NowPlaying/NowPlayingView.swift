@@ -30,32 +30,11 @@ struct NowPlayingView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
-        // Click anywhere on the backdrop to dismiss. Buttons / seek bar are
-        // their own gestures and take precedence, so controls still work.
+        // Click anywhere on the backdrop to dismiss (Esc also works on
+        // macOS). Buttons / seek bar are their own gestures and take
+        // precedence, so controls still work. No explicit chevron / close
+        // affordance.
         .onTapGesture(perform: close)
-        .overlay(alignment: .topLeading) {
-            Button(action: close) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    #if os(iOS)
-                    .background(.ultraThinMaterial, in: .circle)
-                    #endif
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            #if os(iOS)
-            // Clear the status bar / Dynamic Island and stay tappable above
-            // the full-bleed skin artwork.
-            .padding(.top, 54)
-            .padding(.leading, 16)
-            #else
-            .padding(.top, 28)
-            .padding(.leading, 28)
-            #endif
-            .zIndex(100)
-        }
         #if os(iOS)
         // The Terminal/Winamp/Vinyl skins are scaled-to-fit on iPhone, which
         // shrinks their in-art controls to untappable size. Overlay full-size
