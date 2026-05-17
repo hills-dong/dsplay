@@ -21,35 +21,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - name: Install build tools (mint + quicktype)
+      - name: Install build tools (mint)
         run: |
-          brew install mint quicktype
-
-      - name: Install web deps
-        working-directory: web
-        run: pnpm install --frozen-lockfile
-
-      - name: Build web bundle
-        run: bash scripts/build-web.sh
-
-      - name: Generate IPC types
-        run: bash scripts/gen-ipc.sh
+          brew install mint
 
       - name: Bundle Swift app
         run: |
           export PATH="$HOME/.mint/bin:$PATH"
           mint bootstrap
-          mint run swift-bundler bundle
+          mint run swift-bundler@v2.0.7 bundle
 
       - name: Drop AppIcon + ad-hoc re-sign
         run: |

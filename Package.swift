@@ -3,7 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "DSPlay",
-    platforms: [.macOS(.v14)],
+    platforms: [
+        .macOS("26.0"),
+        .iOS("26.0"),
+    ],
     products: [
         .executable(name: "DSPlay", targets: ["DSPlay"])
     ],
@@ -13,7 +16,6 @@ let package = Package(
             path: "DSPlay",
             exclude: ["Tests"],
             resources: [
-                .copy("Resources/WebDist"),
                 .copy("Resources/StatusItem.png"),
             ]
         ),
@@ -25,7 +27,7 @@ let package = Package(
                 .unsafeFlags([
                     "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
                     "-disable-cross-import-overlays",
-                ])
+                ], .when(platforms: [.macOS]))
             ],
             linkerSettings: [
                 .unsafeFlags([
@@ -33,7 +35,7 @@ let package = Package(
                     "-framework", "Testing",
                     "-Xlinker", "-rpath",
                     "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                ])
+                ], .when(platforms: [.macOS]))
             ]
         ),
     ]

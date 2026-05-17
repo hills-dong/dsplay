@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Regenerates DSPlay/Resources/AppIcon.icns and DSPlay/Resources/StatusItem.png
-# from scratch. Run once (or whenever the brand mark changes). The results
-# are committed to git so normal `build.sh` runs don't need to re-render.
+# Regenerates the brand assets from scratch:
+#   - DSPlay/Resources/AppIcon.icns          (macOS app icon)
+#   - DSPlay/Resources/StatusItem.png        (macOS menu-bar template)
+#   - Packaging/AppIcon-iOS/*.png            (iOS app icon set)
+# Run once (or whenever the brand mark changes). Results are committed so a
+# normal build doesn't re-render.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,36 +14,73 @@ WORK=".build/icon"
 rm -rf "$WORK"
 mkdir -p "$WORK/AppIcon.iconset"
 
-echo "make-icon.sh: rendering app-icon masters"
-swift scripts/make-icon.swift --variant app-large --size 1024 --output "$WORK/large.png"
-swift scripts/make-icon.swift --variant app-small --size 1024 --output "$WORK/small.png"
-
-echo "make-icon.sh: downscaling large master (>=128px slots)"
-for sz in 128 256 512 1024; do
-  sips -z "$sz" "$sz" "$WORK/large.png" --out "$WORK/L-$sz.png" >/dev/null
-done
-
-echo "make-icon.sh: downscaling small master (<=64px slots)"
-for sz in 16 32 64; do
-  sips -z "$sz" "$sz" "$WORK/small.png" --out "$WORK/S-$sz.png" >/dev/null
-done
+# ---------- macOS .icns ----------
+echo "make-icon.sh: rendering macOS app-icon master (1024)"
+swift scripts/make-icon.swift --variant app --size 1024 --output "$WORK/app.png"
 
 ISET="$WORK/AppIcon.iconset"
-cp "$WORK/S-16.png"   "$ISET/icon_16x16.png"
-cp "$WORK/S-32.png"   "$ISET/icon_16x16@2x.png"
-cp "$WORK/S-32.png"   "$ISET/icon_32x32.png"
-cp "$WORK/S-64.png"   "$ISET/icon_32x32@2x.png"
-cp "$WORK/L-128.png"  "$ISET/icon_128x128.png"
-cp "$WORK/L-256.png"  "$ISET/icon_128x128@2x.png"
-cp "$WORK/L-256.png"  "$ISET/icon_256x256.png"
-cp "$WORK/L-512.png"  "$ISET/icon_256x256@2x.png"
-cp "$WORK/L-512.png"  "$ISET/icon_512x512.png"
-cp "$WORK/L-1024.png" "$ISET/icon_512x512@2x.png"
-
+for spec in "16:icon_16x16" "32:icon_16x16@2x" "32:icon_32x32" \
+            "64:icon_32x32@2x" "128:icon_128x128" "256:icon_128x128@2x" \
+            "256:icon_256x256" "512:icon_256x256@2x" "512:icon_512x512" \
+            "1024:icon_512x512@2x"; do
+  sz="${spec%%:*}"; name="${spec##*:}"
+  sips -z "$sz" "$sz" "$WORK/app.png" --out "$ISET/$name.png" >/dev/null
+done
 iconutil -c icns "$ISET" -o "DSPlay/Resources/AppIcon.icns"
 echo "make-icon.sh: wrote DSPlay/Resources/AppIcon.icns"
 
-echo "make-icon.sh: rendering menu bar status item PNG (44px @2x source)"
+# ---------- macOS menu-bar template ----------
+echo "make-icon.sh: rendering menu-bar StatusItem (44px)"
 swift scripts/make-icon.swift --variant statusbar --size 44 \
   --output "DSPlay/Resources/StatusItem.png"
 echo "make-icon.sh: wrote DSPlay/Resources/StatusItem.png"
+
+# ---------- iOS icon set ----------
+echo "make-icon.sh: rendering iOS app-icon master (1024)"
+IOS_DIR="Packaging/AppIcon-iOS"
+mkdir -p "$IOS_DIR"
+swift scripts/make-icon.swift --variant ios --size 1024 --output "$WORK/ios.png"
+
+# Flat set used by the SIMULATOR path (scripts/build-ios-sim.sh).
+sips -z 120 120 "$WORK/ios.png" --out "$IOS_DIR/AppIcon60x60@2x.png"   >/dev/null
+sips -z 180 180 "$WORK/ios.png" --out "$IOS_DIR/AppIcon60x60@3x.png"   >/dev/null
+sips -z 152 152 "$WORK/ios.png" --out "$IOS_DIR/AppIcon76x76@2x.png"   >/dev/null
+sips -z 167 167 "$WORK/ios.png" --out "$IOS_DIR/AppIcon83.5x83.5@2x.png" >/dev/null
+sips -z 1024 1024 "$WORK/ios.png" --out "$IOS_DIR/AppIcon1024.png" >/dev/null
+echo "make-icon.sh: wrote $IOS_DIR/ (5 PNGs)"
+
+# Full multi-size AppIcon.appiconset used by the TestFlight / App Store
+# Xcode build (project.yml). A single-size icon only emits @2x on some
+# toolchains — modern iPhones are @3x, so list every slot explicitly.
+ASET_DIR="Packaging/Assets.xcassets/AppIcon.appiconset"
+mkdir -p "$ASET_DIR"
+rm -f "$ASET_DIR"/*.png
+for px in 20 29 40 58 60 76 80 87 120 152 167 180 1024; do
+  sips -z "$px" "$px" "$WORK/ios.png" --out "$ASET_DIR/icon_${px}.png" >/dev/null
+done
+cat > "$ASET_DIR/Contents.json" <<'JSON'
+{
+  "images" : [
+    { "idiom":"iphone","size":"20x20","scale":"2x","filename":"icon_40.png" },
+    { "idiom":"iphone","size":"20x20","scale":"3x","filename":"icon_60.png" },
+    { "idiom":"iphone","size":"29x29","scale":"2x","filename":"icon_58.png" },
+    { "idiom":"iphone","size":"29x29","scale":"3x","filename":"icon_87.png" },
+    { "idiom":"iphone","size":"40x40","scale":"2x","filename":"icon_80.png" },
+    { "idiom":"iphone","size":"40x40","scale":"3x","filename":"icon_120.png" },
+    { "idiom":"iphone","size":"60x60","scale":"2x","filename":"icon_120.png" },
+    { "idiom":"iphone","size":"60x60","scale":"3x","filename":"icon_180.png" },
+    { "idiom":"ipad","size":"20x20","scale":"1x","filename":"icon_20.png" },
+    { "idiom":"ipad","size":"20x20","scale":"2x","filename":"icon_40.png" },
+    { "idiom":"ipad","size":"29x29","scale":"1x","filename":"icon_29.png" },
+    { "idiom":"ipad","size":"29x29","scale":"2x","filename":"icon_58.png" },
+    { "idiom":"ipad","size":"40x40","scale":"1x","filename":"icon_40.png" },
+    { "idiom":"ipad","size":"40x40","scale":"2x","filename":"icon_80.png" },
+    { "idiom":"ipad","size":"76x76","scale":"1x","filename":"icon_76.png" },
+    { "idiom":"ipad","size":"76x76","scale":"2x","filename":"icon_152.png" },
+    { "idiom":"ipad","size":"83.5x83.5","scale":"2x","filename":"icon_167.png" },
+    { "idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"icon_1024.png" }
+  ],
+  "info" : { "author":"xcode", "version":1 }
+}
+JSON
+echo "make-icon.sh: wrote $ASET_DIR/ (full appiconset)"

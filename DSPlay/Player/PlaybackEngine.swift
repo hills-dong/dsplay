@@ -8,7 +8,7 @@ enum RepeatMode: String {
 @MainActor
 final class PlaybackEngine {
     private let player = AVQueuePlayer()
-    private let events: BridgeEvents
+    let state: PlayerState
     private let synology: SynologyClient
     private let nowPlaying = NowPlayingCenter()
 
@@ -27,16 +27,19 @@ final class PlaybackEngine {
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
 
-    init(events: BridgeEvents, synology: SynologyClient) {
-        self.events = events
+    init(state: PlayerState, synology: SynologyClient) {
+        self.state = state
         self.synology = synology
+        // Honor AirPlay route selection from the system route picker.
+        player.allowsExternalPlayback = true
 
         let interval = CMTime(seconds: 0.25, preferredTimescale: 1000)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self else { return }
             let pos = CMTimeGetSeconds(time)
             let dur = self.currentDuration()
-            self.events.playerTimeUpdate(position: pos, duration: dur)
+            self.state.position = pos
+            self.state.duration = dur
             self.nowPlaying.update(track: self.currentTrack, position: pos, duration: dur,
                                    isPlaying: self.player.rate > 0)
         }
@@ -61,7 +64,7 @@ final class PlaybackEngine {
     func setQueue(tracks: [TrackDTO], startIndex: Int) async throws {
         queue = tracks
         queueIndex = min(max(startIndex, 0), tracks.count - 1)
-        emitQueueUpdate()
+        syncQueueState()
         try await loadCurrent()
         play()
     }
@@ -70,7 +73,7 @@ final class PlaybackEngine {
     func queueAdd(tracks: [TrackDTO]) async throws {
         let wasEmpty = queue.isEmpty
         queue.append(contentsOf: tracks)
-        emitQueueUpdate()
+        syncQueueState()
         if wasEmpty {
             queueIndex = 0
             try await loadCurrent()
@@ -94,16 +97,16 @@ final class PlaybackEngine {
                 stop()
             }
         }
-        emitQueueUpdate()
+        syncQueueState()
     }
 
     func queueClear() {
         queue = []
         queueIndex = -1
         player.removeAllItems()
-        events.playerStateChange(state: "idle")
+        state.status = .idle
         nowPlaying.update(track: nil, position: 0, duration: 0, isPlaying: false)
-        emitQueueUpdate()
+        syncQueueState()
     }
 
     func queueReorder(from: Int, to: Int) {
@@ -118,21 +121,23 @@ final class PlaybackEngine {
         } else if from > queueIndex && to <= queueIndex {
             queueIndex += 1
         }
-        emitQueueUpdate()
+        syncQueueState()
     }
 
     // MARK: transport
 
     func play() {
         player.play()
-        events.playerStateChange(state: "playing", track: currentTrack.map(trackPayload))
+        state.status = .playing
+        state.currentTrack = currentTrack
         nowPlaying.update(track: currentTrack, position: CMTimeGetSeconds(player.currentTime()),
                           duration: currentDuration(), isPlaying: true)
     }
 
     func pause() {
         player.pause()
-        events.playerStateChange(state: "paused", track: currentTrack.map(trackPayload))
+        state.status = .paused
+        state.currentTrack = currentTrack
         nowPlaying.update(track: currentTrack, position: CMTimeGetSeconds(player.currentTime()),
                           duration: currentDuration(), isPlaying: false)
     }
@@ -155,7 +160,7 @@ final class PlaybackEngine {
         queueIndex = nextIdx
         try await loadCurrent()
         play()
-        emitQueueUpdate()
+        syncQueueState()
     }
 
     func prev() async throws {
@@ -170,28 +175,28 @@ final class PlaybackEngine {
         queueIndex = prevIdx
         try await loadCurrent()
         play()
-        emitQueueUpdate()
+        syncQueueState()
     }
 
     // MARK: modes
 
     func setShuffle(_ value: Bool) {
         shuffle = value
-        emitQueueUpdate()
+        syncQueueState()
     }
 
     func setRepeat(_ mode: RepeatMode) {
         repeatMode = mode
-        emitQueueUpdate()
+        syncQueueState()
     }
 
     // MARK: internals
 
     private func handleItemDidEnd() {
-        events.playerEnded()
+        state.position = 0
         let next = computeNextIndex(after: queueIndex, advanceOnRepeatAll: false)
         if next == -1 {
-            events.playerStateChange(state: "idle")
+            state.status = .idle
             nowPlaying.update(track: nil, position: 0, duration: 0, isPlaying: false)
             return
         }
@@ -199,7 +204,7 @@ final class PlaybackEngine {
         Task { @MainActor in
             try? await loadCurrent()
             play()
-            emitQueueUpdate()
+            syncQueueState()
         }
     }
 
@@ -234,37 +239,33 @@ final class PlaybackEngine {
         guard let url = await synology.streamURL(songId: track.id) else {
             throw BridgeHandlerError(kind: "Network", message: "Could not build stream URL for \(track.id)")
         }
-        // FLAC MIME hint (see M1 fix for context).
+        // The stream endpoint transcodes server-side to lossless WAV, so hint
+        // AVFoundation accordingly (the URL has no file extension to sniff).
         let asset = AVURLAsset(url: url, options: [
-            "AVURLAssetOutOfBandMIMETypeKey": "audio/flac"
+            "AVURLAssetOutOfBandMIMETypeKey": "audio/wav"
         ])
         let item = AVPlayerItem(asset: asset)
         player.removeAllItems()
         player.insert(item, after: nil)
-        events.playerStateChange(state: "loading", track: trackPayload(track))
+        state.status = .loading
+        state.currentTrack = track
         nowPlaying.update(track: track, position: 0, duration: track.duration, isPlaying: false)
     }
 
     private func stop() {
         player.pause()
         player.removeAllItems()
-        events.playerStateChange(state: "idle")
+        state.status = .idle
         nowPlaying.update(track: nil, position: 0, duration: 0, isPlaying: false)
     }
 
-    private func emitQueueUpdate() {
-        let queuePayload = queue.map { trackPayload($0) }
-        events.queueUpdate(queue: queuePayload, index: queueIndex,
-                           shuffle: shuffle, repeatMode: repeatMode.rawValue)
-    }
-
-    private func trackPayload(_ t: TrackDTO) -> [String: Any] {
-        var d: [String: Any] = [
-            "id": t.id, "title": t.title, "artist": t.artist,
-            "album": t.album, "duration": t.duration
-        ]
-        if let path = t.path { d["path"] = path }
-        if let aa = t.albumArtist { d["albumArtist"] = aa }
-        return d
+    /// Push queue / index / mode state (and the derived current track) into the
+    /// observable `PlayerState` the SwiftUI views read.
+    private func syncQueueState() {
+        state.queue = queue
+        state.queueIndex = queueIndex
+        state.shuffle = shuffle
+        state.repeatMode = repeatMode
+        state.currentTrack = currentTrack
     }
 }

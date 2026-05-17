@@ -41,6 +41,12 @@ struct RawSong: Decodable {
     }
     struct SongAudio: Decodable {
         let duration: Double?
+        let bitrate: Int?       // bits per second
+        let frequency: Int?     // sample rate in Hz
+        let channel: Int?
+        let filesize: Int?
+        let container: String?
+        let codec: String?
     }
 }
 
@@ -87,7 +93,7 @@ struct ArtistDTO: Encodable { let name: String }
 struct AlbumDTO: Encodable { let name: String; let albumArtist: String; let year: Int }
 struct PlaylistDTO: Encodable { let id: String; let name: String; let type: String }
 
-/// Outgoing shape matching shared/ipc-schema.ts `Track`.
+/// Normalized track shape consumed by the SwiftUI views and PlaybackEngine.
 struct TrackDTO: Encodable {
     let id: String
     let title: String
@@ -96,6 +102,11 @@ struct TrackDTO: Encodable {
     let album: String
     let duration: Double
     let path: String?
+    // Audio quality (from Synology song_audio additional).
+    let bitrate: Int?       // bits per second
+    let sampleRate: Int?    // Hz
+    let channels: Int?
+    let codec: String?
 
     init(_ raw: RawSong) {
         self.id = raw.id
@@ -103,7 +114,12 @@ struct TrackDTO: Encodable {
         self.artist = raw.additional?.song_tag?.artist ?? "Unknown Artist"
         self.albumArtist = raw.additional?.song_tag?.album_artist
         self.album = raw.additional?.song_tag?.album ?? "Unknown Album"
-        self.duration = raw.additional?.song_audio?.duration ?? 0
+        let audio = raw.additional?.song_audio
+        self.duration = audio?.duration ?? 0
         self.path = raw.path
+        self.bitrate = audio?.bitrate
+        self.sampleRate = audio?.frequency
+        self.channels = audio?.channel
+        self.codec = audio?.codec ?? audio?.container
     }
 }

@@ -1,23 +1,36 @@
+#if os(macOS)
 import Cocoa
+import SwiftUI
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let appModel = AppModel()
+    private let uiState = UIState()
     private var windowController: MainWindowController?
     private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Eagerly build the window controller so PlaybackEngine + SynologyClient
-        // exist for the status-bar mini player, but don't show the window — this
-        // is a menu-bar-resident app, the status item is the entry point.
-        let wc = MainWindowController()
-        windowController = wc
+        NSApp.setActivationPolicy(.accessory)
+        ScrollerTheming.enableOverlayScrollers()
+        uiState.applyAppearance()
 
-        let engine = wc.webViewController.playback
-        let synology = wc.webViewController.synology
+        // Menu-bar-resident: the status item is the entry point. Build the
+        // window lazily on first "Open Library" so launch is light.
         statusItemController = StatusItemController(
-            engine: engine,
-            synology: synology,
+            engine: appModel.engine,
+            synology: appModel.synology,
+            state: appModel.player,
             onShowWindow: { [weak self] in self?.showMainWindow() }
         )
+
+        // Silent re-auth from the on-disk credential store.
+        Task { @MainActor in await appModel.loadSavedCredentials() }
+
+        // Open the main window on launch (the status item stays available
+        // for re-opening after the window is closed).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.showMainWindow()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -28,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func showMainWindow() {
         if windowController == nil {
-            windowController = MainWindowController()
+            windowController = MainWindowController(appModel: appModel, uiState: uiState)
         }
         windowController?.showWindow(nil)
         windowController?.window?.makeKeyAndOrderFront(nil)
@@ -37,3 +50,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 }
+#endif

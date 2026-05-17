@@ -41,11 +41,15 @@ enum Endpoints {
 
     static func stream(baseURL: String, sid: String, songId: String) -> URL? {
         var c = URLComponents(string: baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/webapi/AudioStation/stream.cgi")
+        // Use server-side transcoding to lossless WAV instead of streaming the
+        // raw file. AVFoundation's progressive-HTTP FLAC demuxer glitches
+        // (periodic clicks/pops); WAV/PCM plays cleanly and stays lossless.
         c?.queryItems = [
             URLQueryItem(name: "api", value: "SYNO.AudioStation.Stream"),
             URLQueryItem(name: "version", value: "2"),
-            URLQueryItem(name: "method", value: "stream"),
+            URLQueryItem(name: "method", value: "transcode"),
             URLQueryItem(name: "id", value: songId),
+            URLQueryItem(name: "format", value: "wav"),
             URLQueryItem(name: "_sid", value: sid),
         ]
         return c?.url
