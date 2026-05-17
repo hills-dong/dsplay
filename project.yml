@@ -1,0 +1,42 @@
+# XcodeGen spec for the iOS TestFlight / App Store build ONLY.
+# macOS keeps using swift-bundler (scripts/build.sh) and the simulator path
+# keeps using scripts/build-ios-sim.sh — both untouched. This project simply
+# wraps the same DSPlay/ Swift sources as a signable iOS .app so Xcode can
+# Archive → upload to App Store Connect / TestFlight.
+#
+# Regenerate after editing:  xcodegen generate
+name: DSPlay
+options:
+  bundleIdPrefix: app
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: "$(DSPLAY_TEAM_ID)"   # set in Xcode or via env/xcconfig
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  DSPlay:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: DSPlay
+        excludes:
+          - "Tests/**"
+          - "Resources/**"          # StatusItem.png is macOS-only (gated)
+      - path: Packaging/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.dsplay
+        PRODUCT_NAME: DSPlay
+        INFOPLIST_FILE: Packaging/Device-Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+        GENERATE_INFOPLIST_FILE: "NO"

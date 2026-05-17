@@ -33,18 +33,51 @@ final class SynologyClient {
     }
 
     func search(query: String, limit: Int = 50) async throws -> [TrackDTO] {
-        let env: SynoResponse<SearchData> = try await authedJSON { sid, base in
-            guard let url = Endpoints.search(baseURL: base, sid: sid, query: query, limit: limit) else {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        // 1) Fast path: Synology server-side search.
+        if let env: SynoResponse<SearchData> = try? await authedJSON({ sid, base in
+            guard let url = Endpoints.search(baseURL: base, sid: sid,
+                                             query: trimmed, limit: limit) else {
                 throw BridgeHandlerError(kind: "Network", message: "Invalid search URL")
             }
             return url
+        }), env.success, let songs = env.data?.songs, !songs.isEmpty {
+            return songs.map(TrackDTO.init)
         }
-        guard env.success, let data = env.data else {
+
+        // 2) Fallback: server search often only prefix-matches titles and
+        //    misses artist/album or substring queries. Pull the full song
+        //    index and filter locally (title / artist / album, case- and
+        //    diacritic-insensitive).
+        let all = try await allSongs(limit: 5000)
+        let needle = trimmed.folding(options: [.caseInsensitive, .diacriticInsensitive],
+                                     locale: .current)
+        func has(_ s: String) -> Bool {
+            s.folding(options: [.caseInsensitive, .diacriticInsensitive],
+                      locale: .current).contains(needle)
+        }
+        return all.filter {
+            has($0.title) || has($0.artist) || has($0.album)
+                || has($0.albumArtist ?? "")
+        }
+    }
+
+    /// Full song index as TrackDTOs (used by search fallback).
+    private func allSongs(limit: Int = 5000) async throws -> [TrackDTO] {
+        let env: SynoResponse<SearchData> = try await authedJSON { sid, base in
+            guard let url = Endpoints.listAllSongs(baseURL: base, sid: sid, limit: limit) else {
+                throw BridgeHandlerError(kind: "Network", message: "Invalid listAllSongs URL")
+            }
+            return url
+        }
+        guard env.success else {
             throw BridgeHandlerError(kind: "Synology",
-                              message: "Search failed (code \(env.error?.code ?? -1))",
+                              message: "Song list failed (code \(env.error?.code ?? -1))",
                               code: env.error?.code)
         }
-        return (data.songs ?? []).map(TrackDTO.init)
+        return (env.data?.songs ?? []).map(TrackDTO.init)
     }
 
     func streamURL(songId: String) async -> URL? {

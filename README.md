@@ -2,7 +2,7 @@
 
 A native-feel macOS music player for Synology Audio Station.
 
-Built with a Swift/AppKit shell hosting WKWebView + SolidJS (per `yetone/native-feel-skill`). AVQueuePlayer handles streaming directly from your NAS.
+Fully native: SwiftUI views in an AppKit shell, `AVQueuePlayer` streaming directly from your NAS. No web layer, no IPC bridge.
 
 ## Features
 
@@ -19,9 +19,7 @@ Build:
 - macOS 14.0+
 - Xcode Command Line Tools (`xcode-select --install`)
 - [mint](https://github.com/yonaskolb/Mint) — `brew install mint`
-- [swift-bundler](https://swiftbundler.dev) — `mint install stackotter/swift-bundler@main`
-- [pnpm](https://pnpm.io) — `brew install pnpm`
-- [quicktype](https://quicktype.io) — `brew install quicktype`
+- [swift-bundler](https://swiftbundler.dev) — pinned to `v2.0.7` via `Mintfile` (`mint bootstrap`)
 
 Run / Install:
 - macOS 14.0+
@@ -29,7 +27,7 @@ Run / Install:
 ## Building from source
 
 ```bash
-bash scripts/build.sh   # builds web bundle + IPC codegen + .app via swift-bundler
+bash scripts/build.sh   # builds the .app via swift-bundler + installs to /Applications
 bash scripts/run.sh     # builds + launches
 bash scripts/package.sh # builds + ad-hoc signs + makes dist/DSPlay-x.y.z.dmg
 ```
@@ -74,34 +72,29 @@ Until you do this, share the DMG only with people who trust right-click-Open.
 ## Repository layout
 
 ```
-DSPlay/             Swift sources (~1300 LOC)
-  App/              AppDelegate + MainWindowController
-  Bridge/           BridgeRouter / BridgeServer / BridgeEvents
-  Synology/         URLSession client + DTOs
-  Player/           AVQueuePlayer wrapper + NowPlayingCenter + RemoteCommands
+DSPlay/             Native Swift sources
+  App/              DSPlayApp (SwiftUI App) + AppDelegate + AppModel + MainWindowController
+  UI/               Theme, UIState, RootView + Components (CoverImage, TrackList, DetailHero, AlbumCard)
+  Views/            LoginView, MainShellView, Search/Artists/Albums/Playlists (+Detail),
+                    PlayerBarView, QueueDrawerView, NowPlaying/ (4 skins + switcher)
+  Synology/         URLSession client + DTOs + SynologyError
+  Player/           AVQueuePlayer wrapper + PlayerState + NowPlayingCenter + RemoteCommands + MiniPlayerView
   System/           Credentials store (file-backed) + NSStatusItem
-  WebHost/          WKWebView controller + dsplay:// scheme handler
-  Generated/        IPCTypes.swift (codegen, committed)
-  Resources/WebDist  Vite bundle output (gitignored, built at compile)
-web/                SolidJS UI (~1100 LOC)
-  src/routes/       Login, Search, Artists, ArtistDetail, Albums, Playlists, PlaylistDetail, NowPlaying
-  src/components/   AppShell, PlayerBar, QueueDrawer, TrackList, AlbumCard
-  src/components/skins/  Editorial, Terminal, Winamp, Vinyl + SkinSwitcher
-  src/stores/       auth, player, ui
-shared/ipc-schema.ts   TS-as-source-of-truth for IPC types (codegen feeds Swift side)
-scripts/            build.sh, run.sh, gen-ipc.sh, build-web.sh, package.sh, make-icon.{sh,swift}
+  Resources/        StatusItem.png, AppIcon.icns
+scripts/            build.sh, run.sh, package.sh, make-icon.{sh,swift}
 ```
+
+State flows one way: `PlaybackEngine` mutates an `@Observable PlayerState`;
+SwiftUI views (main window **and** the menu-bar popover) observe it directly —
+no polling, no bridge.
 
 ## Development
 
 ```bash
-swift build                   # Swift-only compile
-swift test                    # Swift unit tests (Swift Testing via SPM)
-(cd web && pnpm test)         # Vitest
+swift build                   # compile
+swift test --no-parallel      # unit tests (the mock URLProtocol uses shared static state)
 bash scripts/run.sh           # build + launch the .app
 ```
-
-The web UI gets HMR while developing if you run `pnpm --filter web dev` from `web/`, but for the desktop app you need to rebuild via `scripts/build.sh` after web changes.
 
 ## Releases
 

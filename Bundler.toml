@@ -5,13 +5,16 @@ identifier = "app.dsplay"
 product = "DSPlay"
 version = "0.2.0"
 category = "public.app-category.music"
-minimum_macos_version = "14.0"   # required by swift-bundler v2.0.7+ when app has resources
+minimum_macos_version = "26.0"
 
 [apps.DSPlay.plist]
-CFBundleDisplayName = "DSPlay"
-LSMinimumSystemVersion = "14.0"
+CFBundleDisplayName = "DS Music"
+LSMinimumSystemVersion = "26.0"
 NSPrincipalClass = "NSApplication"
 NSHumanReadableCopyright = ""
 
+# Native URLSession is ATS-bound (unlike the old WKWebView custom-scheme path).
+# A Synology NAS is commonly reached over plain http:// on a LAN IP, so allow
+# arbitrary loads — the app talks only to the user-entered NAS host.
 [apps.DSPlay.plist.NSAppTransportSecurity]
-NSAllowsArbitraryLoads = false
+NSAllowsArbitraryLoads = true

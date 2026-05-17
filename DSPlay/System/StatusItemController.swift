@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import SwiftUI
 
@@ -5,12 +6,11 @@ import SwiftUI
 final class StatusItemController: NSObject {
     private let item: NSStatusItem
     private let popover: NSPopover
-    private let model: MiniPlayerModel
     private let onShowWindow: () -> Void
 
-    init(engine: PlaybackEngine, synology: SynologyClient, onShowWindow: @escaping () -> Void) {
+    init(engine: PlaybackEngine, synology: SynologyClient, state: PlayerState,
+         onShowWindow: @escaping () -> Void) {
         self.onShowWindow = onShowWindow
-        self.model = MiniPlayerModel(engine: engine, synology: synology)
 
         self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -28,7 +28,9 @@ final class StatusItemController: NSObject {
         }
 
         let view = MiniPlayerView(
-            model: model,
+            state: state,
+            engine: engine,
+            synology: synology,
             onShowWindow: { [weak self] in
                 self?.closePopover()
                 self?.onShowWindow()
@@ -40,26 +42,35 @@ final class StatusItemController: NSObject {
     }
 
     /// Loads StatusItem.png from whichever bundle layout we're running in.
-    /// Mirrors the multi-path strategy in WebViewController.resolveWebDistDirectory.
+    /// `Bundle.module` is a trapping accessor, so it must only be evaluated as
+    /// a last resort, never eagerly.
     private static func loadStatusItemImage() -> NSImage? {
-        let candidates: [URL?] = [
-            // 1. swift-bundler layout: nested SwiftPM bundle.
-            Bundle.main
-                .url(forResource: "DSPlay_DSPlay", withExtension: "bundle")
-                .flatMap { Bundle(url: $0) }?
-                .url(forResource: "StatusItem", withExtension: "png"),
-            // 2. SwiftPM module accessor (used by `swift run` / tests).
-            Bundle.module.url(forResource: "StatusItem", withExtension: "png"),
-            // 3. Flat in Bundle.main.
-            Bundle.main.url(forResource: "StatusItem", withExtension: "png"),
-        ]
-        for url in candidates.compactMap({ $0 }) {
-            if let img = NSImage(contentsOf: url) {
-                img.size = NSSize(width: 18, height: 18)
-                img.isTemplate = true
-                return img
-            }
+        func makeImage(_ url: URL) -> NSImage? {
+            guard let img = NSImage(contentsOf: url) else { return nil }
+            img.size = NSSize(width: 18, height: 18)
+            img.isTemplate = true
+            return img
         }
+
+        // 1. swift-bundler layout: nested SwiftPM bundle.
+        if let url = Bundle.main
+            .url(forResource: "DSPlay_DSPlay", withExtension: "bundle")
+            .flatMap({ Bundle(url: $0) })?
+            .url(forResource: "StatusItem", withExtension: "png"),
+           let img = makeImage(url) {
+            return img
+        }
+        // 2. Flat in Bundle.main.
+        if let url = Bundle.main.url(forResource: "StatusItem", withExtension: "png"),
+           let img = makeImage(url) {
+            return img
+        }
+        // 3. SwiftPM module accessor — last resort.
+        if let url = Bundle.module.url(forResource: "StatusItem", withExtension: "png"),
+           let img = makeImage(url) {
+            return img
+        }
+
         NSLog("[DSPlay] StatusItem.png not found in any bundle path; falling back to SF Symbol")
         let fallback = NSImage(systemSymbolName: "music.note", accessibilityDescription: "DSPlay")
         fallback?.isTemplate = true
@@ -76,11 +87,12 @@ final class StatusItemController: NSObject {
 
     private func showPopover() {
         guard let button = item.button else { return }
-        // .accessory apps don't always own the active app, so activate so the
-        // popover can become key and receive keyboard input.
-        NSApp.activate(ignoringOtherApps: true)
-        model.start()
+        // Anchor the popover to the status item BEFORE activating the app.
+        // Calling NSApp.activate(_:) first makes AppKit lay the popover out
+        // against a stale status-button frame. Show first, then activate to
+        // take key focus.
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate(ignoringOtherApps: true)
         popover.contentViewController?.view.window?.makeKey()
     }
 
@@ -90,7 +102,7 @@ final class StatusItemController: NSObject {
 }
 
 extension StatusItemController: NSPopoverDelegate {
-    func popoverDidClose(_ notification: Notification) {
-        model.stop()
-    }
+    // No teardown needed — @Observable PlayerState drives the view directly,
+    // there is no polling timer to stop (unlike the old MiniPlayerModel).
 }
+#endif

@@ -1,27 +1,27 @@
 import AppKit
 import Foundation
 
-// Renders a single PNG for one of three brand variants. The bash
-// orchestrator calls this multiple times, then downscales / packages as
-// needed.
+// Renders one PNG for a brand-mark variant. The bash orchestrator
+// (scripts/make-icon.sh) calls this repeatedly and packages the results.
 //
 // Usage:
-//   swift scripts/make-icon.swift --variant {app-large|app-small|statusbar} \
+//   swift scripts/make-icon.swift --variant {app|ios|statusbar} \
 //                                 --size N --output PATH
 //
-//  app-large : square paper-on-rounded-rect with two hairline rules + a
-//              big serif "D" + a red period. Used as the master for the
-//              128/256/512/1024 slots of the .icns iconset.
-//  app-small : same square + paper bg but the hairlines are dropped and
-//              the "D." is enlarged so the dot still reads at 16px.
-//              Used as the master for the 16/32/64 slots.
-//  statusbar : transparent background, plain black serif "D" (no dot —
-//              menu bar template images are monochrome). Used as the
-//              menu bar icon.
+//  app       : macOS app icon — squircle-radius rounded rect, red brand
+//              gradient, white rounded "DS" + white accent dot. A small
+//              inset is left around the rounded rect (macOS convention).
+//  ios       : iOS app icon — identical mark but FULL-BLEED square with no
+//              rounded corners and no inset (springboard masks the squircle
+//              itself).
+//  statusbar : transparent background, monochrome black "DS" — macOS menu
+//              bar template image (the system tints it).
 //
-// All coordinates below are TOP-DOWN (y=0 is at the top of the canvas),
-// because `lockFocusFlipped(true)` sets up a flipped graphics context.
-// Numeric constants are fractions of 1024 — tweak them and re-run to taste.
+// The mark matches the current Apple-Music-style UI: the brand red accent
+// (systemRed family) and the bold "DS." wordmark with its signature dot.
+//
+// Coordinates are TOP-DOWN (lockFocusFlipped(true)); constants are fractions
+// of the canvas — tweak and re-run.
 
 // ----- argument parsing -----
 var variant: String?
@@ -37,127 +37,100 @@ while let arg = args.next() {
     }
 }
 guard let variant, let sizeArg, let outPath else {
-    FileHandle.standardError.write("usage: --variant {app-large|app-small|statusbar} --size N --output PATH\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: --variant {app|ios|statusbar} --size N --output PATH\n".data(using: .utf8)!)
     exit(2)
 }
 let size = CGFloat(sizeArg)
 
-// ----- font resolution -----
-func serifBold(_ pointSize: CGFloat) -> NSFont {
-    // 1. Newsreader (the typeface the web UI uses) if installed.
-    if let f = NSFont(name: "Newsreader-Bold", size: pointSize) { return f }
-    if let f = NSFont(name: "Newsreader", size: pointSize) { return f }
-    // 2. New York (macOS system serif since Big Sur).
-    if let f = NSFont(name: "NewYork-Bold", size: pointSize) { return f }
-    // 3. Derive a serif from the system font descriptor.
-    let systemBold = NSFont.systemFont(ofSize: pointSize, weight: .bold)
-    if let serif = systemBold.fontDescriptor.withDesign(.serif),
-       let f = NSFont(descriptor: serif, size: pointSize) { return f }
-    // 4. Last-resort: system bold (sans-serif but the renderer will still
-    // produce something visible — the operator should install Newsreader).
-    return systemBold
+// ----- font: bold rounded (SF Pro Rounded), matching the clean UI -----
+func roundedBold(_ pointSize: CGFloat) -> NSFont {
+    let base = NSFont.systemFont(ofSize: pointSize, weight: .heavy)
+    if let rd = base.fontDescriptor.withDesign(.rounded),
+       let f = NSFont(descriptor: rd, size: pointSize) { return f }
+    return base
 }
 
-// ----- colour tokens (match web/src/styles/theme.css) -----
-let ink    = NSColor(red: 0x11/255.0, green: 0x11/255.0, blue: 0x11/255.0, alpha: 1.0)
-let paper  = NSColor(red: 0xFA/255.0, green: 0xFA/255.0, blue: 0xF7/255.0, alpha: 1.0)
-let accent = NSColor(red: 0xC4/255.0, green: 0x30/255.0, blue: 0x2B/255.0, alpha: 1.0)
+// ----- brand colours (the red accent of the current UI) -----
+let redTop = NSColor(red: 0xFF/255.0, green: 0x45/255.0, blue: 0x3A/255.0, alpha: 1) // systemRed-ish
+let redBot = NSColor(red: 0xD2/255.0, green: 0x00/255.0, blue: 0x1E/255.0, alpha: 1) // deeper
+let white  = NSColor.white
+let ink    = NSColor(red: 0x11/255.0, green: 0x11/255.0, blue: 0x11/255.0, alpha: 1)
 
-// ----- helpers (top-down coordinates) -----
+// ----- helpers (top-down coords) -----
 
-/// Draws a serif "D" so that the bounding box of the glyph is centred on
-/// (centerX, centerY). The "D" has empty space below the baseline
-/// (descender area), so to make the visible glyph land at centerY we
-/// shift the box up by half the descender height.
-func drawSerifD(centerX: CGFloat, centerY: CGFloat, fontSize: CGFloat, color: NSColor) {
-    let font = serifBold(fontSize)
+/// Draws "DS" + a trailing dot as one group, centred on (cx, cy).
+func drawWordmark(cx: CGFloat, cy: CGFloat, fontSize: CGFloat,
+                  color: NSColor, dotColor: NSColor, withDot: Bool) {
+    let font = roundedBold(fontSize)
     let attrs: [NSAttributedString.Key: Any] = [
         .font: font,
         .foregroundColor: color,
-        .kern: -fontSize * 0.02 as NSNumber,
+        .kern: -fontSize * 0.03 as NSNumber,
     ]
-    let text = "D" as NSString
+    let text = "DS" as NSString
     let bbox = text.size(withAttributes: attrs)
-    let descender = font.descender   // negative
-    let origin = NSPoint(
-        x: centerX - bbox.width / 2,
-        y: centerY - bbox.height / 2 + descender / 2
-    )
-    text.draw(at: origin, withAttributes: attrs)
+
+    let dotR: CGFloat = withDot ? fontSize * 0.085 : 0
+    let dotGap: CGFloat = withDot ? fontSize * 0.10 : 0
+    let groupW = bbox.width + dotGap + dotR * 2
+    let originX = cx - groupW / 2
+    // The glyph box includes the descender slack; nudge up so the visible
+    // letters sit centred on cy.
+    let originY = cy - bbox.height / 2 + font.descender / 2
+    text.draw(at: NSPoint(x: originX, y: originY), withAttributes: attrs)
+
+    if withDot {
+        let dotCX = originX + bbox.width + dotGap + dotR
+        // Sit the dot on the letter baseline (≈ bottom of the cap height).
+        let dotCY = cy + bbox.height / 2 + font.descender / 2 - dotR
+        dotColor.setFill()
+        NSBezierPath(ovalIn: NSRect(x: dotCX - dotR, y: dotCY - dotR,
+                                    width: dotR * 2, height: dotR * 2)).fill()
+    }
 }
 
-func drawDot(centerX: CGFloat, centerY: CGFloat, radius: CGFloat, color: NSColor) {
-    color.setFill()
-    NSBezierPath(ovalIn: NSRect(
-        x: centerX - radius, y: centerY - radius,
-        width: radius * 2, height: radius * 2
-    )).fill()
-}
-
-func drawHairline(yTop: CGFloat, inset: CGFloat, thickness: CGFloat, color: NSColor) {
-    color.setFill()
-    NSBezierPath(rect: NSRect(
-        x: inset, y: yTop, width: size - inset * 2, height: thickness
-    )).fill()
+func fillRedGradient(in path: NSBezierPath) {
+    path.addClip()
+    let g = NSGradient(starting: redTop, ending: redBot)!
+    g.draw(in: NSRect(x: 0, y: 0, width: size, height: size), angle: -90)
 }
 
 // ----- canvas (flipped → top-down coords) -----
+// Proven approach: lockFocusFlipped on an NSImage. (A hand-rolled
+// NSBitmapImageRep context rendered all-black, so don't reintroduce it.)
+// Exact output pixel size + any alpha flattening is handled downstream by
+// make-icon.sh (sips), so we only need correct ART here.
 let img = NSImage(size: NSSize(width: size, height: size))
 img.lockFocusFlipped(true)
+let ctx = NSGraphicsContext.current
 
 switch variant {
-case "app-large":
-    let bgPath = NSBezierPath(
-        roundedRect: NSRect(x: 0, y: 0, width: size, height: size),
-        xRadius: size * 0.22, yRadius: size * 0.22
-    )
-    paper.setFill(); bgPath.fill()
+case "app":
+    // macOS: rounded rect with a small inset, transparent corners.
+    let inset = size * 0.06
+    let r = (size - inset * 2) * 0.2237      // Apple squircle ratio
+    let bg = NSBezierPath(roundedRect:
+        NSRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2),
+        xRadius: r, yRadius: r)
+    ctx?.saveGraphicsState()
+    fillRedGradient(in: bg)
+    ctx?.restoreGraphicsState()
+    drawWordmark(cx: size * 0.5, cy: size * 0.5, fontSize: size * 0.40,
+                 color: white, dotColor: white, withDot: true)
 
-    let ruleInset = size * (100.0/1024.0)
-    let ruleThickness = max(1, size * (3.0/1024.0))
-    drawHairline(yTop: size * (180.0/1024.0), inset: ruleInset, thickness: ruleThickness, color: ink)
-    drawHairline(yTop: size * (841.0/1024.0), inset: ruleInset, thickness: ruleThickness, color: ink)
-
-    drawSerifD(
-        centerX: size * 0.40,
-        centerY: size * 0.52,
-        fontSize: size * (760.0/1024.0),
-        color: ink
-    )
-    drawDot(
-        centerX: size * 0.74,
-        centerY: size * 0.72,
-        radius:  size * (68.0/1024.0),
-        color: accent
-    )
-
-case "app-small":
-    let bgPath = NSBezierPath(
-        roundedRect: NSRect(x: 0, y: 0, width: size, height: size),
-        xRadius: size * 0.22, yRadius: size * 0.22
-    )
-    paper.setFill(); bgPath.fill()
-
-    drawSerifD(
-        centerX: size * 0.40,
-        centerY: size * 0.52,
-        fontSize: size * (900.0/1024.0),
-        color: ink
-    )
-    drawDot(
-        centerX: size * 0.76,
-        centerY: size * 0.74,
-        radius:  size * (90.0/1024.0),
-        color: accent
-    )
+case "ios":
+    // iOS: full-bleed square (springboard masks the squircle).
+    ctx?.saveGraphicsState()
+    fillRedGradient(in: NSBezierPath(rect:
+        NSRect(x: 0, y: 0, width: size, height: size)))
+    ctx?.restoreGraphicsState()
+    drawWordmark(cx: size * 0.5, cy: size * 0.5, fontSize: size * 0.42,
+                 color: white, dotColor: white, withDot: true)
 
 case "statusbar":
-    drawSerifD(
-        centerX: size / 2,
-        centerY: size * 0.50,
-        fontSize: size * 0.88,
-        color: ink
-    )
+    // Monochrome template — no dot (menu bar images are 1-bit-ish).
+    drawWordmark(cx: size * 0.5, cy: size * 0.52, fontSize: size * 0.62,
+                 color: ink, dotColor: ink, withDot: false)
 
 default:
     img.unlockFocus()

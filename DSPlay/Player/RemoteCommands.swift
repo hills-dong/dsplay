@@ -3,11 +3,9 @@ import MediaPlayer
 @MainActor
 final class RemoteCommands {
     private weak var engine: PlaybackEngine?
-    private let events: BridgeEvents
 
-    init(engine: PlaybackEngine, events: BridgeEvents) {
+    init(engine: PlaybackEngine) {
         self.engine = engine
-        self.events = events
         install()
     }
 
@@ -16,33 +14,27 @@ final class RemoteCommands {
 
         cc.playCommand.isEnabled = true
         cc.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.engine?.play(); self?.events.mediaKey("toggle") }
+            Task { @MainActor [weak self] in self?.engine?.play() }
             return .success
         }
         cc.pauseCommand.isEnabled = true
         cc.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.engine?.pause(); self?.events.mediaKey("toggle") }
+            Task { @MainActor [weak self] in self?.engine?.pause() }
             return .success
         }
         cc.togglePlayPauseCommand.isEnabled = true
         cc.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.engine?.toggle(); self?.events.mediaKey("toggle") }
+            Task { @MainActor [weak self] in self?.engine?.toggle() }
             return .success
         }
         cc.nextTrackCommand.isEnabled = true
         cc.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in
-                self?.events.mediaKey("next")
-                try? await self?.engine?.next()
-            }
+            Task { @MainActor in try? await self?.engine?.next() }
             return .success
         }
         cc.previousTrackCommand.isEnabled = true
         cc.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in
-                self?.events.mediaKey("prev")
-                try? await self?.engine?.prev()
-            }
+            Task { @MainActor in try? await self?.engine?.prev() }
             return .success
         }
 

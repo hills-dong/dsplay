@@ -16,21 +16,15 @@ DMG_NAME="DSPlay-${VERSION}.dmg"
 DIST_DIR="dist"
 APP_PATH=".build/bundler/DSPlay.app"
 
-echo "package.sh: [1/4] clean web build"
-(cd web && pnpm build 2>&1 | tail -3)
-
-echo "package.sh: [2/4] regenerate IPC types"
-bash scripts/gen-ipc.sh > /dev/null
-
-echo "package.sh: [3/4] swift-bundler release build"
-mint run swift-bundler bundle --configuration release 2>&1 | tail -3
+echo "package.sh: [1/2] swift-bundler release build"
+mint run swift-bundler@v2.0.7 bundle --configuration release 2>&1 | tail -3
 
 # Sign ad-hoc (so the OS will run it on this machine without quarantine fuss).
 # Use --deep so the inner DSPlay_DSPlay.bundle resource bundle is signed too.
 echo "package.sh: ad-hoc sign"
 codesign --sign - --deep --force "$APP_PATH"
 
-echo "package.sh: [4/4] DMG"
+echo "package.sh: [2/2] DMG"
 mkdir -p "$DIST_DIR"
 rm -f "$DIST_DIR/$DMG_NAME"
 

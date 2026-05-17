@@ -29,3 +29,7 @@ DSPlay/Resources/WebDist/
 .env
 .env.local
 dist/
+DSPlay.xcodeproj/
+*.xcarchive
+demo-server/.wrangler/
+demo-server/node_modules/

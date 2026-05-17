@@ -1,0 +1,13 @@
+{
+  // Demo Synology-Audio-Station mock for App Store review of DS Music.
+  // Deployed with the existing wrangler OAuth session:  wrangler deploy
+  "name": "dsplay-demo",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-04-01",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  // Import the cover JPEGs as binary ArrayBuffers.
+  "rules": [
+    { "type": "Data", "globs": ["**/*.jpg"], "fallthrough": true }
+  ]
+}
